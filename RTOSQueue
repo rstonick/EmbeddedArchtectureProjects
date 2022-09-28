@@ -1,0 +1,155 @@
+#include "project.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+// FreeRTOS header Files
+#include "FreeRTOS_PSoC.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "semphr.h"
+#include "timers.h"
+#include "event_groups.h"
+
+typedef struct CMDMSG{
+    bool LedState;
+    char str[20+1];
+    
+} CMDMSG;
+#define QUEUE_ITEM_SIZE     (sizeof (CMDMSG))
+#define QUEUE_LENGTH        10
+
+QueueHandle_t               xCmdQueue;
+
+// Your task functions
+void vMyTask1(void *pvParameters);
+void vMyTask2(void *pvParameters);
+
+//===================================
+void myPSoCSetup()
+{
+    LED1_Write(0);
+    
+    LCD_Start();
+    LCD_ClearDisplay();
+    LCD_Position(0,0);
+    LCD_PrintString("FreeRTOS-Queue");
+    CyDelay(2000);
+    LCD_Position(1,0);
+    LCD_PrintString("SW1- On/Off LED1");
+    
+    
+}
+//===================================
+int main(void)
+{
+    BaseType_t err; 
+    CyGlobalIntEnable; /* Enable global interrupts. */
+
+    /* Place your initialization/startup code here (e.g. MyInst_Start()) */
+    FreeRTOS_Init();
+    myPSoCSetup();
+    
+    //Create Queue
+    xCmdQueue = xQueueCreate(QUEUE_LENGTH, QUEUE_ITEM_SIZE);
+    if (xCmdQueue == NULL){
+            while(1);    //Cannot Create queue   
+    }
+    
+    
+    
+    //Create Task 1 
+    err = xTaskCreate( vMyTask1,                            //TaskFunction_t pvTaskCode,
+                       "Task 1",                            //const char * const pcName,
+                       configMINIMAL_STACK_SIZE,            //unsigned short usStackDepth,
+                       NULL,                                //void *pvParameters,
+                       configMAX_PRIORITIES-1,              //UBaseType_t uxPriority,
+                       NULL);                               //TaskHandle_t *pxCreatedTask );
+    if (err != pdPASS){
+     //cannot create task!
+        while(1); //Stop here
+    }
+    
+    //Create Task 2 
+    err = xTaskCreate( vMyTask2,                            //TaskFunction_t pvTaskCode,
+                       "Task 2",                            //const char * const pcName,
+                       configMINIMAL_STACK_SIZE,            //unsigned short usStackDepth,
+                       NULL,                                //void *pvParameters,
+                       configMAX_PRIORITIES-1,              //UBaseType_t uxPriority,
+                       NULL);                               //TaskHandle_t *pxCreatedTask );
+    if (err != pdPASS){
+     //cannot create task!
+        while(1); //Stop here
+    }
+    vTaskStartScheduler();
+       
+    
+    for(;;)
+    {
+        /* Place your application code here. */
+    }
+}
+//===============================
+void vMyTask1(void *pvParameters){
+    CMDMSG  cmd;
+    bool    presw1 = true;
+    bool    currsw1;
+    
+    cmd.LedState = false;
+    
+    
+    while(1){
+        // 1. Read current nSW1 state
+        currsw1 = nSW1_Read();
+        
+        // 2. Check the edge
+        if ((presw1 == true) && (currsw1 == false)){
+            cmd.LedState = !cmd.LedState;   
+            if (cmd.LedState)
+                sprintf(cmd.str, "Turn On LED1...");
+            else
+                sprintf(cmd.str, "Turn of LED1..");
+            while(xQueueSend(xCmdQueue, &cmd, 0) != pdPASS){};
+        }
+        // 3. Update presw1 to currsw1
+        
+        presw1 = currsw1;
+        
+        vTaskDelay(pdMS_TO_TICKS(20));
+       
+    }
+}
+//===============================
+void vMyTask2(void *pvParameters){
+    
+    CMDMSG cmd;
+    int timeout = -1;
+    
+    while(1){
+     if (xQueueReceive( xCmdQueue, &cmd, 0) == pdPASS){
+        if (cmd.LedState)
+            LED1_Write(1);
+        else
+            LED1_Write(0);
+        LCD_Position(2,0);
+        LCD_PrintString("                    "); //20 Soace-Characters
+        LCD_Position(2,0);
+        LCD_PrintString(cmd.str);
+        timeout = 100;
+        
+    }
+    if(timeout == 0) {
+        LCD_Position(2,0);
+        LCD_PrintString("                    "); //20 Soace-Characters    
+        timeout = -1;
+    }
+    if (timeout > 0)
+        timeout--;
+    
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+}
+//===============================
+}
