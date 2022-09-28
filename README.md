@@ -1,2 +1,3 @@
 # EmbeddedArchtectureProjects
-Code written in embedded C for my Embedded Architectures class
+Code written in embedded C on PSoc Platform for my Embedded Architectures class
+
